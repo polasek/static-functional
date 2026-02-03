@@ -1,4 +1,6 @@
 /bazel-*
 /external
 /compile_commands.json
-
+# Ignore the Bazel lock file.
+# This project has basically no dependencies, it just creates noise.
+/MODULE.bazel.lock
