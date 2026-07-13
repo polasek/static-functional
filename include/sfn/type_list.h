@@ -1,8 +1,18 @@
 #ifndef STATIC_FUNCTIONAL_INCLUDE_SFN_TYPE_LIST_H
 #define STATIC_FUNCTIONAL_INCLUDE_SFN_TYPE_LIST_H
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <type_traits>
+#include <utility>
+
+#ifndef SFN_HAS_PACK_INDEXING
+#if defined(__cpp_pack_indexing) && __cpp_pack_indexing >= 202311L && __cplusplus >= 202400L
+#define SFN_HAS_PACK_INDEXING 1
+#else
+#define SFN_HAS_PACK_INDEXING 0
+#endif
+#endif
 
 namespace sfn {
 
@@ -46,13 +56,27 @@ using append = decltype(detail::append_impl<T>(A{}));
 template <typename T, type_list A>
 using prepend = decltype(detail::prepend_impl<T>(A{}));
 template <type_list A>
-requires(!empty<A>) using drop_front = decltype(detail::drop_front_impl(A{}));
+  requires(!empty<A>)
+using drop_front = decltype(detail::drop_front_impl(A{}));
 template <type_list A>
-requires(!empty<A>) using front = decltype(detail::front_impl(A{}));
+  requires(!empty<A>)
+using front = decltype(detail::front_impl(A{}));
 template <type_list A, template <typename...> typename Template>
 using to = decltype(detail::to_impl<Template>(A{}));
 
 namespace detail {
+#if SFN_HAS_PACK_INDEXING
+template <typename... Ts>
+constexpr auto drop_back_impl(list<Ts...>) {
+  if constexpr (sizeof...(Ts) == 0) {
+    return list<>{};
+  } else {
+    return []<std::size_t... Is>(std::index_sequence<Is...>) {
+      return list<Ts...[Is]...>{};
+    }(std::make_index_sequence<sizeof...(Ts) - 1>{});
+  }
+}
+#else
 template <type_list A>
 constexpr auto drop_back_impl(A) {
   if constexpr (size<A> == 1) {
@@ -61,7 +85,14 @@ constexpr auto drop_back_impl(A) {
     return prepend<front<A>, decltype(drop_back_impl(drop_front<A>{}))>{};
   }
 }
+#endif
 
+#if SFN_HAS_PACK_INDEXING
+template <std::size_t N, typename... Ts>
+constexpr auto get_impl(list<Ts...>) {
+  return list<Ts... [N]> {};
+}
+#else
 template <std::size_t N, type_list A>
 constexpr auto get_impl(A) {
   if constexpr (N == 0) {
@@ -70,7 +101,17 @@ constexpr auto get_impl(A) {
     return get_impl<N - 1>(drop_front<A>{});
   }
 }
+#endif
 
+#if SFN_HAS_PACK_INDEXING
+template <std::size_t Index, std::size_t Size, typename... Ts>
+constexpr auto sublist_impl(list<Ts...>) {
+  constexpr std::size_t actual_size = Size < sizeof...(Ts) - Index ? Size : sizeof...(Ts) - Index;
+  return []<std::size_t... Is>(std::index_sequence<Is...>) {
+    return list<Ts...[Is + Index]...>{};
+  }(std::make_index_sequence<actual_size>{});
+}
+#else
 template <std::size_t Index, std::size_t Size, type_list A>
 constexpr auto sublist_impl(A) {
   if constexpr (empty<A> || Size == 0) {
@@ -81,6 +122,7 @@ constexpr auto sublist_impl(A) {
     return sublist_impl<Index - 1, Size>(drop_front<A>{});
   }
 }
+#endif
 
 template <template <typename...> typename F, typename... Ts>
 constexpr auto apply_impl() {
@@ -93,18 +135,24 @@ constexpr auto apply_impl() {
 }  // namespace detail
 
 template <type_list A, std::size_t Index>
-requires(Index < size<A>) using get = front<decltype(detail::get_impl<Index>(A{}))>;
+  requires(Index < size<A>)
+using get = front<decltype(detail::get_impl<Index>(A{}))>;
 template <type_list A>
-requires(!empty<A>) using back = get<A, size<A> - 1u>;
+  requires(!empty<A>)
+using back = get<A, size<A> - 1u>;
 template <type_list A>
-requires(!empty<A>) using drop_back = decltype(detail::drop_back_impl(A{}));
+  requires(!empty<A>)
+using drop_back = decltype(detail::drop_back_impl(A{}));
 template <type_list A, std::size_t Index, std::size_t Size = npos>
-requires(Index <= size<A>) using sublist = decltype(detail::sublist_impl<Index, Size>(A{}));
+  requires(Index <= size<A>)
+using sublist = decltype(detail::sublist_impl<Index, Size>(A{}));
 template <type_list A, std::size_t Index, std::size_t Size = npos>
-requires(Index <= size<A>) using erase = concat<
-    sublist<A, 0, Index>, sublist<A, Index + (Size <= size<A> - Index ? Size : size<A> - Index)>>;
+  requires(Index <= size<A>)
+using erase = concat<sublist<A, 0, Index>,
+                     sublist<A, Index + (Size <= size<A> - Index ? Size : size<A> - Index)>>;
 template <type_list A, std::size_t... Indices>
-requires((Indices < size<A>)&&...) using select = list<get<A, Indices>...>;
+  requires((Indices < size<A>) && ...)
+using select = list<get<A, Indices>...>;
 template <template <typename...> typename F, typename... Ts>
 using apply = front<decltype(detail::apply_impl<F, Ts...>())>;
 
@@ -119,15 +167,11 @@ constexpr bool any_of_impl(list<Ts...>) {
   return (P<Ts>::value || ...);
 }
 
-template <template <typename...> typename P, type_list A>
-constexpr std::size_t find_if_impl(A) {
-  if constexpr (empty<A>) {
-    return 0;
-  } else if constexpr (P<front<A>>::value) {
-    return 0;
-  } else {
-    return 1 + find_if_impl<P>(drop_front<A>{});
-  }
+template <template <typename...> typename P, typename... Ts>
+constexpr std::size_t find_if_impl(list<Ts...>) {
+  std::size_t index = 0u;
+  static_cast<void>(((P<Ts>::value || !++index) || ...));
+  return index;
 }
 
 template <template <typename...> typename P, typename... Ts>
@@ -135,6 +179,23 @@ constexpr std::size_t count_if_impl(list<Ts...>) {
   return ((P<Ts>::value ? 1u : 0u) + ... + 0u);
 }
 
+#if SFN_HAS_PACK_INDEXING
+template <template <typename...> typename P, typename... Ts>
+constexpr auto filter_impl(list<Ts...>) {
+  constexpr std::size_t count = count_if_impl<P>(list<Ts...>{});
+  constexpr auto get_indexes = [] {
+    std::array<std::size_t, count> indexes;
+    std::size_t i_t = 0u;
+    std::size_t i_out = 0u;
+    static_cast<void>((P<Ts>::value && (indexes[i_out++] = i_t), i_t++), ...);
+    return indexes;
+  };
+  constexpr auto indexes = get_indexes();
+  return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+    return list<Ts...[indexes[Is]]...>{};
+  }(std::make_index_sequence<count>{});
+}
+#else
 template <template <typename...> typename P, type_list A>
 constexpr auto filter_impl(A) {
   if constexpr (empty<A>) {
@@ -145,14 +206,21 @@ constexpr auto filter_impl(A) {
     return filter_impl<P>(drop_front<A>{});
   }
 }
+#endif
 
-template <template <typename...> typename F, type_list A>
-constexpr auto map_impl(A) {
-  if constexpr (empty<A>) {
-    return list<>{};
-  } else {
-    return prepend<apply<F, front<A>>, decltype(map_impl<F>(drop_front<A>{}))>{};
-  }
+template <template <typename...> typename F, typename T>
+struct universal_apply {
+  using type = F<T>;
+};
+template <template <typename...> typename F, typename T>
+  requires requires() { typename F<T>::type; }
+struct universal_apply<F, T> {
+  using type = F<T>::type;
+};
+
+template <template <typename...> typename F, typename... Ts>
+constexpr auto map_impl(list<Ts...>) {
+  return list<typename universal_apply<F, Ts>::type...>{};
 }
 
 template <typename T>

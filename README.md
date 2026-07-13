@@ -4,6 +4,8 @@ This is a standalone header-only C++20 library providing compile-time functional
 
 A C++20 compile-time type list library is also included, mostly just to avoid the need for any transitive dependencies&mdash;the functional part requires such a library for its implementation&mdash;but it's there, and should be fairly nice to use if you want to.
 
+Pack indexing makes the type list library much faster to compile. It should be automatically enabled when using C++26 and a compiler that defines the feature test macro. Should you need to explicitly enable or disable the use of this feature, compile with `-DSFN_HAS_PACK_INDEXING=1` or `-DSFN_HAS_PACK_INDEXING=0` respectively.
+
 ## Motivating example 1
 
 ```cpp
