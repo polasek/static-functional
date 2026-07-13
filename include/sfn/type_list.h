@@ -129,13 +129,18 @@ constexpr auto sublist_impl(A) {
 #endif
 
 template <template <typename...> typename F, typename... Ts>
-constexpr auto apply_impl() {
-  if constexpr (requires { typename F<Ts...>::type; }) {
-    return list<typename F<Ts...>::type>{};
-  } else {
-    return list<F<Ts...>>{};
-  }
-}
+struct universal_apply {
+  using type = F<Ts...>;
+};
+template <template <typename...> typename F, typename... Ts>
+  requires requires() { typename F<Ts...>::type; }
+struct universal_apply<F, Ts...> {
+  using type = typename F<Ts...>::type;
+};
+
+template <template <typename...> typename F, typename... Ts>
+using universal_apply_t = typename universal_apply<F, Ts...>::type;
+
 }  // namespace detail
 
 template <type_list A, std::size_t Index>
@@ -158,7 +163,7 @@ template <type_list A, std::size_t... Indices>
   requires((Indices < size<A>) && ...)
 using select = list<get<A, Indices>...>;
 template <template <typename...> typename F, typename... Ts>
-using apply = front<decltype(detail::apply_impl<F, Ts...>())>;
+using apply = detail::universal_apply_t<F, Ts...>;
 
 namespace detail {
 template <template <typename...> typename P, typename... Ts>
@@ -216,19 +221,9 @@ constexpr auto filter_impl(A) {
 }
 #endif
 
-template <template <typename...> typename F, typename T>
-struct universal_apply {
-  using type = F<T>;
-};
-template <template <typename...> typename F, typename T>
-  requires requires() { typename F<T>::type; }
-struct universal_apply<F, T> {
-  using type = typename F<T>::type;
-};
-
 template <template <typename...> typename F, typename... Ts>
 constexpr auto map_impl(list<Ts...>) {
-  return list<typename universal_apply<F, Ts>::type...>{};
+  return list<detail::universal_apply_t<F, Ts>...>{};
 }
 
 template <typename T>
