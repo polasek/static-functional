@@ -107,9 +107,13 @@ constexpr auto get_impl(A) {
 template <std::size_t Index, std::size_t Size, typename... Ts>
 constexpr auto sublist_impl(list<Ts...>) {
   constexpr std::size_t actual_size = Size < sizeof...(Ts) - Index ? Size : sizeof...(Ts) - Index;
-  return []<std::size_t... Is>(std::index_sequence<Is...>) {
-    return list<Ts...[Is + Index]...>{};
-  }(std::make_index_sequence<actual_size>{});
+  if constexpr (actual_size == 0) {
+    return list<>{};
+  } else {
+    return []<std::size_t... Is>(std::index_sequence<Is...>) {
+      return list<Ts...[Is + Index]...>{};
+    }(std::make_index_sequence<actual_size>{});
+  }
 }
 #else
 template <std::size_t Index, std::size_t Size, type_list A>
@@ -183,17 +187,21 @@ constexpr std::size_t count_if_impl(list<Ts...>) {
 template <template <typename...> typename P, typename... Ts>
 constexpr auto filter_impl(list<Ts...>) {
   constexpr std::size_t count = count_if_impl<P>(list<Ts...>{});
-  constexpr auto get_indexes = [] {
-    std::array<std::size_t, count> indexes;
-    std::size_t i_t = 0u;
-    std::size_t i_out = 0u;
-    static_cast<void>((P<Ts>::value && (indexes[i_out++] = i_t), i_t++), ...);
-    return indexes;
-  };
-  constexpr auto indexes = get_indexes();
-  return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-    return list<Ts...[indexes[Is]]...>{};
-  }(std::make_index_sequence<count>{});
+  if constexpr (count == 0) {
+    return list<>{};
+  } else {
+    constexpr auto get_indexes = [] {
+      std::array<std::size_t, count> indexes;
+      std::size_t i_t = 0u;
+      std::size_t i_out = 0u;
+      ((P<Ts>::value && (indexes[i_out++] = i_t), i_t++), ...);
+      return indexes;
+    };
+    constexpr auto indexes = get_indexes();
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+      return list<Ts...[indexes[Is]]...>{};
+    }(std::make_index_sequence<count>{});
+  }
 }
 #else
 template <template <typename...> typename P, type_list A>
@@ -215,7 +223,7 @@ struct universal_apply {
 template <template <typename...> typename F, typename T>
   requires requires() { typename F<T>::type; }
 struct universal_apply<F, T> {
-  using type = F<T>::type;
+  using type = typename F<T>::type;
 };
 
 template <template <typename...> typename F, typename... Ts>
